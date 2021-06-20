@@ -1,5 +1,6 @@
 from functools import reduce, wraps
 from importlib import import_module
+import threading
 
 try:
     import gevent
@@ -100,6 +101,7 @@ class lazy_object(object):
 def deep_get(dct, keys, default=None):
     return reduce(lambda d, key: d.get(key, default) if isinstance(d, dict) else default, keys.split("."), dct)
 
+
 def dict_merge(dct, merge_dct):
     """ Recursive dict merge. Inspired by :meth:``dict.update()``, instead of
     updating only top-level keys, dict_merge recurses down into dicts nested
@@ -116,24 +118,29 @@ def dict_merge(dct, merge_dct):
             dct[k] = merge_dct[k]
 
 
-# ----- gevent/greenlet utils -----
-def greenlet():
+def greenlet(**kwargs):
+    if not has_gevent:
+        raise RuntimeError("gevent not installed")
+    later = kwargs.get('later', None)
+
     def inner_wrapper(func):
         @wraps(func)
         def wrapper(*args, **kwargs):
-            return gevent.spawn(func, *args, **kwargs)
+            if later:
+                gl = gevent.spawn_later(*gl_args, **kwargs)
+            else:
+                gl = gevent.spawn(*gl_args, **kwargs)
+            return gl
         return wrapper
     return inner_wrapper
 
 
-def timeout(value):
+def thread(**kwargs):
     def inner_wrapper(func):
         @wraps(func)
         def wrapper(*args, **kwargs):
-            timeout = gevent.Timeout(value)
-            timeout.start()
-            resp = func(*args, **kwargs)
-            timeout.cancel()
-            return resp
+            t = threading.Thread(target=func, args=args, kwargs=kwargs)
+            t.start()
+            return t
         return wrapper
     return inner_wrapper
